@@ -1,0 +1,27 @@
+# Dataset paths and preprocessing for SSL400 MediaPipe Pose CSVs.
+# Relative paths are resolved from the project root (ssl400-research/).
+
+raw_csv_root: "../Dataset - MP - CSV"
+processed_dir: "data/processed"
+inspected_dir: "data/inspected"
+
+# Keep classes with at least this many samples (plan default).
+min_samples_per_class: 10
+
+# Temporal length after pad/truncate (guide ~60 frames @ 20 FPS).
+sequence_length: 64
+
+# Channels used for ST-GCN: x,y,z (visibility used as mask only).
+use_z: true
+visibility_threshold: 0.5
+# If true, multiply coordinates by 0 when visibility < threshold.
+mask_low_visibility: true
+
+# Stratified split ratios (must sum to 1.0).
+train_ratio: 0.70
+val_ratio: 0.15
+test_ratio: 0.15
+split_seed: 42
+
+# Cache prepared tensors as .npz for faster training reloads.
+save_npz: true

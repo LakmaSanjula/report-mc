@@ -1,0 +1,31 @@
+# ST-GCN model and training hyperparameters.
+
+model:
+  in_channels: 3          # x, y, z (set 2 if use_z: false in data.yaml)
+  num_joints: 33          # MediaPipe Pose
+  num_classes: null       # filled automatically from prepared class map
+  channels: [64, 64, 128, 256]
+  temporal_kernel: 9
+  dropout: 0.5            # MC Dropout layer before classifier
+  graph_strategy: spatial  # partition into self / centripetal / centrifugal
+
+train:
+  epochs: 80
+  batch_size: 32
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  optimizer: adam
+  scheduler: cosine       # cosine | step | none
+  step_size: 30
+  gamma: 0.1
+  early_stopping_patience: 15
+  num_workers: 0          # Windows-friendly default; raise on Linux/Colab
+  amp: false              # set true on CUDA for mixed precision
+  class_weights: true     # inverse-frequency weights for imbalance
+  seed: 42
+  device: auto            # auto | cpu | cuda
+
+paths:
+  checkpoint_dir: "checkpoints"
+  results_dir: "results"
+  experiment_name: "baseline_stgcn_seed42"
