@@ -30,6 +30,8 @@ def evaluate_model(
     y_true: list[int] = []
     y_pred: list[int] = []
     sample_ids: list[str] = []
+    top5_correct = 0
+    n_seen = 0
 
     for batch in loader:
         x = batch["x"].to(device, non_blocking=True)
@@ -38,11 +40,16 @@ def evaluate_model(
         if criterion is not None:
             losses.append(float(criterion(logits, y).item()))
         pred = logits.argmax(dim=1)
+        k = min(5, logits.size(1))
+        topk = logits.topk(k, dim=1).indices
+        top5_correct += int((topk == y.unsqueeze(1)).any(dim=1).sum().item())
+        n_seen += int(y.size(0))
         y_true.extend(y.cpu().tolist())
         y_pred.extend(pred.cpu().tolist())
         sample_ids.extend(batch["sample_id"])
 
     metrics = classification_report_dict(y_true, y_pred)
+    metrics["top5_accuracy"] = float(top5_correct / max(n_seen, 1))
     metrics["loss"] = float(sum(losses) / max(len(losses), 1)) if losses else None
     metrics["num_samples"] = len(y_true)
     metrics["y_true"] = y_true
@@ -128,6 +135,7 @@ def evaluate_checkpoint(
 
     print(
         f"{split} | acc={metrics['accuracy']:.4f} | "
+        f"top5={metrics.get('top5_accuracy', 0):.4f} | "
         f"f1_macro={metrics['f1_macro']:.4f} | "
         f"f1_weighted={metrics['f1_weighted']:.4f}"
     )

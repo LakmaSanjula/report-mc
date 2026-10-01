@@ -14,30 +14,51 @@ from src.utils.config import project_root, resolve_path
 
 
 def augment_pose_tensor(x: torch.Tensor) -> torch.Tensor:
-    """Light train-time augmentation on (C, T, V) landmark tensors."""
-    out = x.clone()
-    c, t, v = out.shape
+    """Mild train-time augmentation that keeps the sign label valid.
 
-    # Random isotropic scale
-    if torch.rand(1).item() < 0.8:
-        scale = float(torch.empty(1).uniform_(0.9, 1.1).item())
+    Used transforms (small, label-preserving):
+      - slight scale
+      - small coordinate noise
+      - tiny in-plane rotation
+      - short temporal shift
+
+    Not used: left-right mirror (changes many signs) and joint dropout
+    (the previous strong version hurt accuracy).
+    """
+    out = x.clone()
+    _, t, _ = out.shape
+
+    if torch.rand(1).item() < 0.7:
+        scale = float(torch.empty(1).uniform_(0.95, 1.05).item())
         out = out * scale
 
-    # Gaussian noise on coordinates
-    if torch.rand(1).item() < 0.8:
-        noise = torch.randn_like(out) * 0.01
-        out = out + noise
+    if torch.rand(1).item() < 0.7:
+        out = out + torch.randn_like(out) * 0.005
 
-    # Temporal shift (circular)
-    if t > 1 and torch.rand(1).item() < 0.5:
-        shift = int(torch.randint(-max(1, t // 10), max(2, t // 10 + 1), (1,)).item())
-        out = torch.roll(out, shifts=shift, dims=1)
+    # Small rotation in the image plane (x, y). z is left unchanged.
+    if out.size(0) >= 2 and torch.rand(1).item() < 0.5:
+        angle = float(torch.empty(1).uniform_(-0.08, 0.08).item())  # ~±5 degrees
+        cos_a = float(np.cos(angle))
+        sin_a = float(np.sin(angle))
+        x_coord = out[0].clone()
+        y_coord = out[1].clone()
+        out[0] = cos_a * x_coord - sin_a * y_coord
+        out[1] = sin_a * x_coord + cos_a * y_coord
 
-    # Randomly drop a few joints (simulate occlusion), keep major torso joints
-    if torch.rand(1).item() < 0.3:
-        drop_n = int(torch.randint(1, 4, (1,)).item())
-        idxs = torch.randperm(v)[:drop_n]
-        out[:, :, idxs] = 0.0
+    if t > 4 and torch.rand(1).item() < 0.4:
+        shift = int(torch.randint(-2, 3, (1,)).item())
+        if shift != 0:
+            out = torch.roll(out, shifts=shift, dims=1)
+
+    # Signing-speed change: resample time, then restore length T.
+    # This is label-preserving and matches the guide's signing-speed condition.
+    if t > 8 and torch.rand(1).item() < 0.5:
+        rate = float(torch.empty(1).uniform_(0.85, 1.15).item())
+        new_t = max(8, int(round(t * rate)))
+        src_idx = torch.linspace(0, t - 1, new_t).round().long().clamp(0, t - 1)
+        sampled = out[:, src_idx, :]
+        back_idx = torch.linspace(0, new_t - 1, t).round().long().clamp(0, new_t - 1)
+        out = sampled[:, back_idx, :]
 
     return out
 

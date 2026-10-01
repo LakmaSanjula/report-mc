@@ -79,14 +79,27 @@ def plot_training_curves(history: list[dict[str, Any]], out_dir: Path, prefix: s
     fig, ax = plt.subplots(figsize=(7, 4))
     if "train_accuracy" in history[0]:
         ax.plot(epochs, [h["train_accuracy"] for h in history], label="train_acc")
-    ax.plot(epochs, [h["val_accuracy"] for h in history], label="val_acc")
+    ax.plot(epochs, [h["val_accuracy"] for h in history], label="val_top1_acc")
+    if "val_top5_accuracy" in history[0]:
+        ax.plot(epochs, [h["val_top5_accuracy"] for h in history], label="val_top5_acc")
     ax.plot(epochs, [h["val_f1_macro"] for h in history], label="val_f1_macro")
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Score")
-    ax.set_title("Accuracy / macro-F1")
+    ax.set_title("Top-1 / Top-5 accuracy and macro-F1")
     ax.legend()
     ax.grid(True, alpha=0.3)
     _savefig(out_dir / f"{prefix}_metric_curves.png")
+
+    if "train_accuracy" in history[0] and "val_accuracy" in history[0]:
+        fig, ax = plt.subplots(figsize=(7, 4))
+        gap = [h["train_accuracy"] - h["val_accuracy"] for h in history]
+        ax.plot(epochs, gap, color="#C44E52")
+        ax.axhline(0.0, color="gray", linewidth=1)
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("Train acc − val acc")
+        ax.set_title("Overfit gap")
+        ax.grid(True, alpha=0.3)
+        _savefig(out_dir / f"{prefix}_overfit_gap.png")
 
     fig, ax = plt.subplots(figsize=(7, 3.5))
     ax.plot(epochs, [h["lr"] for h in history], color="#8172B3")
@@ -202,10 +215,11 @@ def save_all_training_plots(
     if history:
         written.extend(
             [
-                str(plots_dir / f"{experiment}_loss_curves.png"),
-                str(plots_dir / f"{experiment}_metric_curves.png"),
-                str(plots_dir / f"{experiment}_lr_curve.png"),
-            ]
+            str(plots_dir / f"{experiment}_loss_curves.png"),
+            str(plots_dir / f"{experiment}_metric_curves.png"),
+            str(plots_dir / f"{experiment}_overfit_gap.png"),
+            str(plots_dir / f"{experiment}_lr_curve.png"),
+        ]
         )
 
     if y_true is not None and y_pred is not None and len(y_true) > 0:

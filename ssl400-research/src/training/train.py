@@ -15,6 +15,7 @@ from tqdm import tqdm
 from src.data.dataset import SSL400PoseDataset, collate_batch
 from src.models.stgcn import STGCN
 from src.training.evaluate import evaluate_model
+from src.training.losses import FocalLoss
 from src.training.plots import save_all_training_plots
 from src.utils.config import project_root, resolve_path
 from src.utils.seed import resolve_device, set_seed
@@ -134,11 +135,12 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
     )
 
     label_smoothing = float(train_cfg.get("label_smoothing", 0.0))
-    if bool(train_cfg.get("class_weights", True)):
-        criterion = nn.CrossEntropyLoss(
-            weight=_class_weights(train_ds, device),
-            label_smoothing=label_smoothing,
-        )
+    focal_gamma = float(train_cfg.get("focal_gamma", 0.0))
+    class_weight = _class_weights(train_ds, device) if bool(train_cfg.get("class_weights", False)) else None
+    if focal_gamma > 0:
+        criterion = FocalLoss(gamma=focal_gamma, weight=class_weight)
+    elif class_weight is not None:
+        criterion = nn.CrossEntropyLoss(weight=class_weight, label_smoothing=label_smoothing)
     else:
         criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
@@ -164,7 +166,7 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
     print(f"Train samples: {len(train_ds)} | Val samples: {len(val_ds)}")
     print(
         f"Augment={use_aug} | weighted_sampler={use_weighted_sampler} | "
-        f"label_smoothing={label_smoothing} | dropout={mcfg.get('dropout', 0.3)}"
+        f"focal_gamma={focal_gamma} | dropout={mcfg.get('dropout', 0.5)}"
     )
 
     # Pre-training distribution plots
@@ -214,6 +216,7 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
             "train_accuracy": train_acc,
             "val_loss": val_metrics["loss"],
             "val_accuracy": val_metrics["accuracy"],
+            "val_top5_accuracy": val_metrics.get("top5_accuracy"),
             "val_f1_macro": val_metrics["f1_macro"],
             "lr": float(optimizer.param_groups[0]["lr"]),
             "seconds": round(time.time() - t0, 2),
@@ -223,6 +226,7 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
             f"Epoch {epoch:03d} | train_loss={train_loss:.4f} | train_acc={train_acc:.4f} | "
             f"val_loss={val_metrics['loss']:.4f} | "
             f"val_acc={val_metrics['accuracy']:.4f} | "
+            f"val_top5={val_metrics.get('top5_accuracy', 0):.4f} | "
             f"val_f1_macro={val_metrics['f1_macro']:.4f}"
         )
 

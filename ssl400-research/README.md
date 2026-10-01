@@ -16,11 +16,11 @@ This package contains **only** the model and the code needed to prepare data, tr
    - Label = parent folder name (`Category/Class/...`)
 2. Chose this CSV set as the **only** training representation available in the project folder (no hand/face landmarks, no official splits, no signer IDs).
 3. Built a training pipeline that:
-   - Keeps **all classes with ≥ 1 sample** (~383 classes)
-   - Uses a rare-class-safe split (1-sample classes stay train-only)
+   - Keeps classes with **≥ 10 samples** (about 121 classes; all-class training dropped accuracy to ~25%)
+   - Uses a rare-class-safe split
    - Converts each CSV to an ST-GCN tensor `(C, T, V) = (3, 64, 33)`
    - Defines a **33-node Pose graph** matching MediaPipe joint order
-   - Trains with augmentation, weighted sampling, label smoothing, AdamW
+   - Trains with mild landmark augmentation (no class rebalancing)
    - Saves training graphs under `results/plots/`
    - Implements **ST-GCN** with Dropout before the classifier (MC Dropout–ready)
 4. Provides scripts to **prepare → train → evaluate → export .h5**.
