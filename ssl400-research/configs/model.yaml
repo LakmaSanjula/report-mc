@@ -1,4 +1,4 @@
-# ST-GCN model and training hyperparameters.
+# ST-GCN model and training hyperparameters (accuracy-oriented, Colab-safe).
 
 model:
   in_channels: 3          # x, y, z (set 2 if use_z: false in data.yaml)
@@ -6,26 +6,30 @@ model:
   num_classes: null       # filled automatically from prepared class map
   channels: [64, 64, 128, 256]
   temporal_kernel: 9
-  dropout: 0.5            # MC Dropout layer before classifier
-  graph_strategy: spatial  # partition into self / centripetal / centrifugal
+  dropout: 0.3            # slightly lower than 0.5 to aid fitting many classes
+  graph_strategy: spatial
 
 train:
-  epochs: 80
+  epochs: 100
   batch_size: 32
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  optimizer: adam
-  scheduler: cosine       # cosine | step | none
+  learning_rate: 0.0008
+  weight_decay: 0.0005
+  optimizer: adamw
+  scheduler: cosine
   step_size: 30
   gamma: 0.1
-  early_stopping_patience: 15
-  num_workers: 0          # keep 0 on Colab+Drive; raise on local SSD/Linux
-  amp: false              # set true on CUDA for mixed precision (Colab notebook sets true)
-  class_weights: true     # inverse-frequency weights for imbalance
+  early_stopping_patience: 20
+  num_workers: 0          # keep 0 on Colab+Drive
+  amp: false              # Colab notebook sets true
+  class_weights: true
+  weighted_sampler: true  # oversample rare classes in each epoch
+  label_smoothing: 0.05
+  augment: true           # train-time landmark augmentation
   seed: 42
-  device: auto            # auto | cpu | cuda
+  device: auto
 
 paths:
   checkpoint_dir: "checkpoints"
   results_dir: "results"
-  experiment_name: "baseline_stgcn_seed42"
+  plots_dir: "results/plots"
+  experiment_name: "stgcn_allclasses_seed42"

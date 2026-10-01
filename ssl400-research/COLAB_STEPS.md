@@ -28,17 +28,16 @@ Upload the whole folders (or zip → upload → unzip on Drive).
 
 | Check | Status |
 |---|---|
+| **All classes** (`min_samples_per_class: 1`) | Enabled |
+| Rare-class-safe split (1-sample → train only) | Enabled |
+| Augmentation + weighted sampler + label smoothing | Enabled |
+| Training graphs under `results/plots/` | Enabled |
 | Scripts add project root to `sys.path` | OK |
 | Absolute Drive paths work in `data.yaml` | OK |
-| Pose CSV parser (33 joints, headerless) | OK |
-| ST-GCN + Dropout before classifier | OK |
-| Prepare → train → evaluate scripts | OK |
-| AMP API (old + new PyTorch) | Fixed |
-| `torch.load` on newer PyTorch | Fixed |
-| Checkpoint size (no huge prediction lists) | Fixed |
-| `num_workers=0` recommended on Colab+Drive | Documented |
+| AMP + `torch.load` compatibility | OK |
+| `.h5` export | OK |
 
-**OK to run on Colab** after you set the dataset path (notebook does this automatically).
+**Important:** Using all classes (including 1-sample signs) usually **does not raise** overall accuracy vs the old ≥10 filter. Expect more classes covered, but overall % may drop. The new training tweaks aim to recover as much accuracy as possible on Colab.
 
 ---
 
@@ -109,11 +108,12 @@ Path('configs/data.yaml').write_text(f'''
 raw_csv_root: "{DATASET_DIR.as_posix()}"
 processed_dir: "data/processed"
 inspected_dir: "data/inspected"
-min_samples_per_class: 10
+min_samples_per_class: 1
 sequence_length: 64
 use_z: true
 visibility_threshold: 0.5
 mask_low_visibility: true
+mask_lower_body: true
 train_ratio: 0.70
 val_ratio: 0.15
 test_ratio: 0.15
@@ -128,29 +128,33 @@ model:
   num_classes: null
   channels: [64, 64, 128, 256]
   temporal_kernel: 9
-  dropout: 0.5
+  dropout: 0.3
   graph_strategy: spatial
 
 train:
-  epochs: 80
+  epochs: 100
   batch_size: 32
-  learning_rate: 0.001
-  weight_decay: 0.0001
-  optimizer: adam
+  learning_rate: 0.0008
+  weight_decay: 0.0005
+  optimizer: adamw
   scheduler: cosine
   step_size: 30
   gamma: 0.1
-  early_stopping_patience: 15
+  early_stopping_patience: 20
   num_workers: 0
   amp: true
   class_weights: true
+  weighted_sampler: true
+  label_smoothing: 0.05
+  augment: true
   seed: 42
   device: auto
 
 paths:
   checkpoint_dir: "checkpoints"
   results_dir: "results"
-  experiment_name: "baseline_stgcn_seed42"
+  plots_dir: "results/plots"
+  experiment_name: "stgcn_allclasses_seed42"
 '''.strip() + '\n', encoding='utf-8')
 
 print('Configs ready')
@@ -197,23 +201,24 @@ print('tensor', t.shape, t.dtype)  # expect (3, 64, 33) float32
 
 Outputs:
 
-- `checkpoints/baseline_stgcn_seed42_best.pt`
-- `checkpoints/baseline_stgcn_seed42_last.pt`
-- `results/baseline_stgcn_seed42_history.json`
+- `checkpoints/stgcn_allclasses_seed42_best.pt`
+- `checkpoints/stgcn_allclasses_seed42_last.pt`
+- `results/stgcn_allclasses_seed42_history.json`
+- `results/plots/*.png` (loss, metrics, LR, class distribution, confusion, F1)
 
 ### Step 9 — Evaluate test set
 
 ```bash
-!python scripts/evaluate_stgcn.py --checkpoint checkpoints/baseline_stgcn_seed42_best.pt --split test --data-config configs/data.yaml --model-config configs/model.yaml
+!python scripts/evaluate_stgcn.py --checkpoint checkpoints/stgcn_allclasses_seed42_best.pt --split test --data-config configs/data.yaml --model-config configs/model.yaml
 ```
 
 ### Step 10 — Export model to `.h5`
 
 ```bash
-!python scripts/export_h5.py --checkpoint checkpoints/baseline_stgcn_seed42_best.pt --output checkpoints/baseline_stgcn_seed42_best.h5
+!python scripts/export_h5.py --checkpoint checkpoints/stgcn_allclasses_seed42_best.pt --output checkpoints/stgcn_allclasses_seed42_best.h5
 ```
 
-Creates `checkpoints/baseline_stgcn_seed42_best.h5` (PyTorch weights in HDF5, not a Keras model file).
+Creates `checkpoints/stgcn_allclasses_seed42_best.h5` (PyTorch weights in HDF5, not a Keras model file).
 
 ---
 

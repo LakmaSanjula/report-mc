@@ -5,8 +5,9 @@ raw_csv_root: "../Dataset - MP - CSV"
 processed_dir: "data/processed"
 inspected_dir: "data/inspected"
 
-# Keep classes with at least this many samples (plan default).
-min_samples_per_class: 10
+# Keep ALL classes with at least 1 sample (set 1 = no filtering).
+# Note: including 1-sample classes usually lowers overall accuracy vs filtering.
+min_samples_per_class: 1
 
 # Temporal length after pad/truncate (guide ~60 frames @ 20 FPS).
 sequence_length: 64
@@ -16,8 +17,10 @@ use_z: true
 visibility_threshold: 0.5
 # If true, multiply coordinates by 0 when visibility < threshold.
 mask_low_visibility: true
+# Zero noisy lower-body joints (knees/ankles/feet) — signing is mostly upper body.
+mask_lower_body: true
 
-# Stratified split ratios (must sum to 1.0).
+# Stratified-ish split ratios (rare classes handled specially; see prepare.py).
 train_ratio: 0.70
 val_ratio: 0.15
 test_ratio: 0.15

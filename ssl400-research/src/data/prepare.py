@@ -18,7 +18,6 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
 from src.utils.config import project_root, resolve_path
@@ -73,7 +72,7 @@ def temporal_resize(seq: np.ndarray, target_len: int) -> np.ndarray:
     return np.pad(seq, ((pad_before, pad_after), (0, 0), (0, 0)), mode="constant")
 
 
-def normalize_sequence(seq: np.ndarray) -> np.ndarray:
+def normalize_sequence(seq: np.ndarray, mask_lower_body: bool = False) -> np.ndarray:
     """Translate by mid-hip and scale by shoulder width (training-safe, per-sample)."""
     # MediaPipe: left_shoulder=11, right_shoulder=12, left_hip=23, right_hip=24
     out = seq.copy()
@@ -88,6 +87,11 @@ def normalize_sequence(seq: np.ndarray) -> np.ndarray:
     out[..., :2] = out[..., :2] / scale
     if out.shape[-1] == 3:
         out[..., 2] = out[..., 2] / scale
+
+    if mask_lower_body:
+        # Knees/ankles/feet — often noisy for upper-body SSL framing.
+        lower = [25, 26, 27, 28, 29, 30, 31, 32]
+        out[:, lower, :] = 0.0
     return out.astype(np.float32)
 
 
@@ -123,6 +127,64 @@ def build_class_map(class_names: list[str]) -> dict[str, int]:
     return {name: idx for idx, name in enumerate(sorted(class_names))}
 
 
+def split_all_classes(
+    samples: list[dict[str, Any]],
+    train_ratio: float,
+    val_ratio: float,
+    test_ratio: float,
+    seed: int,
+) -> dict[str, list[dict[str, Any]]]:
+    """Split every class, including rare ones that break sklearn stratify.
+
+    Rules:
+      n == 1 → train only
+      n == 2 → train + test
+      n == 3 → train + val + test
+      n >= 4 → approximate ratios with at least 1 in each split when possible
+    """
+    if abs(train_ratio + val_ratio + test_ratio - 1.0) > 1e-6:
+        raise ValueError("train/val/test ratios must sum to 1.0")
+
+    rng = np.random.RandomState(seed)
+    by_class: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for s in samples:
+        by_class[s["class_name"]].append(s)
+
+    train: list[dict[str, Any]] = []
+    val: list[dict[str, Any]] = []
+    test: list[dict[str, Any]] = []
+
+    for _, items in sorted(by_class.items(), key=lambda kv: kv[0]):
+        items = list(items)
+        rng.shuffle(items)
+        n = len(items)
+        if n == 1:
+            train.extend(items)
+        elif n == 2:
+            train.append(items[0])
+            test.append(items[1])
+        elif n == 3:
+            train.append(items[0])
+            val.append(items[1])
+            test.append(items[2])
+        else:
+            n_test = max(1, int(round(n * test_ratio)))
+            n_val = max(1, int(round(n * val_ratio)))
+            if n_test + n_val >= n:
+                n_test, n_val = 1, 1
+            n_train = n - n_test - n_val
+            if n_train < 1:
+                n_train = 1
+                leftover = n - n_train
+                n_test = max(1, leftover // 2)
+                n_val = leftover - n_test
+            train.extend(items[:n_train])
+            val.extend(items[n_train : n_train + n_val])
+            test.extend(items[n_train + n_val :])
+
+    return {"train": train, "val": val, "test": test}
+
+
 def stratified_split(
     samples: list[dict[str, Any]],
     train_ratio: float,
@@ -130,25 +192,8 @@ def stratified_split(
     test_ratio: float,
     seed: int,
 ) -> dict[str, list[dict[str, Any]]]:
-    if abs(train_ratio + val_ratio + test_ratio - 1.0) > 1e-6:
-        raise ValueError("train/val/test ratios must sum to 1.0")
-
-    labels = [s["class_name"] for s in samples]
-    train_val, test = train_test_split(
-        samples,
-        test_size=test_ratio,
-        random_state=seed,
-        stratify=labels,
-    )
-    relative_val = val_ratio / (train_ratio + val_ratio)
-    train_labels = [s["class_name"] for s in train_val]
-    train, val = train_test_split(
-        train_val,
-        test_size=relative_val,
-        random_state=seed,
-        stratify=train_labels,
-    )
-    return {"train": train, "val": val, "test": test}
+    # Alias: rare-class-safe splitter (supports min_samples_per_class=1).
+    return split_all_classes(samples, train_ratio, val_ratio, test_ratio, seed)
 
 
 def prepare_dataset(data_cfg: dict[str, Any]) -> dict[str, Any]:
@@ -189,6 +234,7 @@ def prepare_dataset(data_cfg: dict[str, Any]) -> dict[str, Any]:
     seq_len = int(data_cfg["sequence_length"])
     vis_thr = float(data_cfg.get("visibility_threshold", 0.5))
     mask_vis = bool(data_cfg.get("mask_low_visibility", True))
+    mask_lower = bool(data_cfg.get("mask_lower_body", True))
     save_npz = bool(data_cfg.get("save_npz", True))
 
     channels = 3 if use_z else 2
@@ -209,7 +255,7 @@ def prepare_dataset(data_cfg: dict[str, Any]) -> dict[str, Any]:
                 mask_low_visibility=mask_vis,
             )
             frame_lengths.append(int(seq.shape[0]))
-            seq = normalize_sequence(seq)
+            seq = normalize_sequence(seq, mask_lower_body=mask_lower)
             seq = temporal_resize(seq, seq_len)  # (T, V, C)
             # ST-GCN convention: (C, T, V)
             tensor = np.transpose(seq, (2, 0, 1)).astype(np.float32)
@@ -252,8 +298,10 @@ def prepare_dataset(data_cfg: dict[str, Any]) -> dict[str, Any]:
         },
         "notes": [
             "Pose-only MediaPipe landmarks (33 joints); no hand/face landmarks in CSVs.",
-            "No signer IDs available; split is stratified by class only.",
+            "No signer IDs available; split is per-class rare-safe (1-sample classes stay train-only).",
             "Visibility masked below threshold; coordinates normalized by mid-hip / shoulder width.",
+            f"mask_lower_body={mask_lower}; min_samples_per_class={int(data_cfg['min_samples_per_class'])}.",
+            "Including all rare classes often lowers overall accuracy vs filtering (>=10).",
         ],
     }
 

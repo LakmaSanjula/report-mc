@@ -93,14 +93,44 @@ def evaluate_checkpoint(
     metrics = evaluate_model(model, loader, device, criterion=nn.CrossEntropyLoss())
     # Strip large arrays from printed summary; keep them in saved file.
     out = {k: v for k, v in metrics.items()}
-    experiment = model_cfg["paths"].get("experiment_name", "baseline_stgcn")
+    experiment = model_cfg["paths"].get("experiment_name", "stgcn_allclasses")
     out_path = results_dir / f"{experiment}_{split}_metrics.json"
     with out_path.open("w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
+
+    # Plots for this split
+    plots_dir = resolve_path(model_cfg["paths"].get("plots_dir", "results/plots"), root)
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    idx_to_class_path = processed_dir / "idx_to_class.json"
+    class_names = None
+    if idx_to_class_path.exists():
+        idx_map = json.loads(idx_to_class_path.read_text(encoding="utf-8"))
+        class_names = [idx_map[str(i)] for i in range(len(idx_map))]
+
+    from src.training.plots import plot_confusion_matrix, plot_per_class_f1
+
+    cm_path = plots_dir / f"{experiment}_{split}_confusion_top30.png"
+    plot_confusion_matrix(
+        metrics["y_true"],
+        metrics["y_pred"],
+        cm_path,
+        class_names=class_names,
+        top_k=30,
+    )
+    f1_path = plots_dir / f"{experiment}_{split}_per_class_f1.png"
+    plot_per_class_f1(
+        metrics["y_true"],
+        metrics["y_pred"],
+        f1_path,
+        class_names=class_names,
+        top_k=30,
+    )
+
     print(
         f"{split} | acc={metrics['accuracy']:.4f} | "
         f"f1_macro={metrics['f1_macro']:.4f} | "
         f"f1_weighted={metrics['f1_weighted']:.4f}"
     )
     print(f"Wrote {out_path}")
+    print(f"Plots: {cm_path.name}, {f1_path.name}")
     return out

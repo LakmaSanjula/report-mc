@@ -16,12 +16,16 @@ This package contains **only** the model and the code needed to prepare data, tr
    - Label = parent folder name (`Category/Class/...`)
 2. Chose this CSV set as the **only** training representation available in the project folder (no hand/face landmarks, no official splits, no signer IDs).
 3. Built a training pipeline that:
-   - Keeps classes with **≥ 10 samples** (severe imbalance otherwise)
-   - Creates a stratified **70% / 15% / 15%** train/val/test split
+   - Keeps **all classes with ≥ 1 sample** (~383 classes)
+   - Uses a rare-class-safe split (1-sample classes stay train-only)
    - Converts each CSV to an ST-GCN tensor `(C, T, V) = (3, 64, 33)`
    - Defines a **33-node Pose graph** matching MediaPipe joint order
-   - Implements **ST-GCN** with **Dropout(0.5)** after pooling (MC Dropout–ready later)
-4. Provides scripts to **prepare → train → evaluate** and save checkpoints under `checkpoints/`.
+   - Trains with augmentation, weighted sampling, label smoothing, AdamW
+   - Saves training graphs under `results/plots/`
+   - Implements **ST-GCN** with Dropout before the classifier (MC Dropout–ready)
+4. Provides scripts to **prepare → train → evaluate → export .h5**.
+
+**Accuracy note:** Removing the old ≥10 filter covers more signs but usually **does not improve** overall % accuracy, because many classes have only 1–2 samples. Pose-only landmarks also limit SSL accuracy.
 
 ---
 
