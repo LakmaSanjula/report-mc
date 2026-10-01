@@ -19,8 +19,8 @@ train:
   step_size: 30
   gamma: 0.1
   early_stopping_patience: 15
-  num_workers: 0          # Windows-friendly default; raise on Linux/Colab
-  amp: false              # set true on CUDA for mixed precision
+  num_workers: 0          # keep 0 on Colab+Drive; raise on local SSD/Linux
+  amp: false              # set true on CUDA for mixed precision (Colab notebook sets true)
   class_weights: true     # inverse-frequency weights for imbalance
   seed: 42
   device: auto            # auto | cpu | cuda

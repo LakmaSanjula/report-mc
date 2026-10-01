@@ -115,7 +115,10 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
     optimizer = _build_optimizer(model, train_cfg)
     scheduler = _build_scheduler(optimizer, train_cfg)
     use_amp = bool(train_cfg.get("amp", False)) and device.type == "cuda"
-    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    try:
+        scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    except (AttributeError, TypeError):
+        scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
     best_val_f1 = -1.0
     best_epoch = -1
@@ -142,7 +145,11 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
             x = batch["x"].to(device, non_blocking=True)
             y = batch["y"].to(device, non_blocking=True)
             optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(enabled=use_amp):
+            try:
+                autocast_ctx = torch.amp.autocast("cuda", enabled=use_amp)
+            except (AttributeError, TypeError):
+                autocast_ctx = torch.cuda.amp.autocast(enabled=use_amp)
+            with autocast_ctx:
                 logits = model(x)
                 loss = criterion(logits, y)
             scaler.scale(loss).backward()
@@ -173,6 +180,12 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
             f"val_f1_macro={val_metrics['f1_macro']:.4f}"
         )
 
+        # Keep checkpoint small (no per-sample arrays).
+        val_metrics_compact = {
+            k: v
+            for k, v in val_metrics.items()
+            if k not in ("y_true", "y_pred", "sample_ids")
+        }
         checkpoint = {
             "epoch": epoch,
             "model_state_dict": model.state_dict(),
@@ -186,7 +199,7 @@ def train_model(data_cfg: dict[str, Any], model_cfg: dict[str, Any]) -> dict[str
                 "min_samples_per_class": data_cfg["min_samples_per_class"],
                 "split_seed": data_cfg["split_seed"],
             },
-            "val_metrics": val_metrics,
+            "val_metrics": val_metrics_compact,
             "class_to_idx_path": str((processed_dir / "class_to_idx.json").resolve()),
         }
         torch.save(checkpoint, last_path)

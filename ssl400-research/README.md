@@ -161,6 +161,18 @@ Writes:
 python scripts/evaluate_stgcn.py --checkpoint checkpoints/baseline_stgcn_seed42_best.pt --split test
 ```
 
+### Google Colab (recommended for GPU)
+
+Full command checklist: **[COLAB_STEPS.md](COLAB_STEPS.md)**
+
+1. Put on Drive: `ssl400-research/` and `Dataset - MP - CSV/` under e.g. `MyDrive/SSL400/`.
+2. Upload / open [`colab_train_stgcn.ipynb`](colab_train_stgcn.ipynb) in Colab  
+   (or paste the commands from `COLAB_STEPS.md`).
+3. **Runtime → Change runtime type → GPU (T4)**.
+4. Run prepare → train → evaluate in order.
+
+Edit `PROJECT_DIR` / `DATASET_DIR` if your Drive paths differ.
+
 ### Useful config changes
 
 | File | Key | Meaning |

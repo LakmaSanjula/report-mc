@@ -63,7 +63,10 @@ def evaluate_checkpoint(
     results_dir.mkdir(parents=True, exist_ok=True)
 
     device = resolve_device(str(model_cfg["train"].get("device", "auto")))
-    ckpt = torch.load(checkpoint_path, map_location=device)
+    try:
+        ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    except TypeError:
+        ckpt = torch.load(checkpoint_path, map_location=device)
     in_channels = int(ckpt.get("in_channels", 3 if data_cfg.get("use_z", True) else 2))
     mcfg = ckpt.get("model_config", model_cfg["model"])
 
